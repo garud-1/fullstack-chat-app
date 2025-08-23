@@ -3,6 +3,9 @@ dotenv.config();
 import express from "express";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
+import verifyRoutes from "./routes/verify.route.js";
+import friendRoutes from "./routes/friend.route.js";
+import verifyCodeRoutes from "./routes/verifyCode.route.js";
 import connectDB from "./db/db.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -26,6 +29,9 @@ app.use(
 );
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api", verifyRoutes);
+app.use("/api", friendRoutes);
+app.use("/api", verifyCodeRoutes);
 
 
 if(process.env.NODE_ENV === "production") {

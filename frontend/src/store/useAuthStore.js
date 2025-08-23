@@ -33,13 +33,27 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
-      set({ authUser: res.data });
-      toast.success("Account created successfully");
-      get().connectSocket();
+      // Store email for verification step
+      set({ pendingVerificationEmail: res.data.email });
+      toast.success(res.data.message || "Account created. Please verify your email.");
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Signup failed");
     } finally {
       set({ isSigningUp: false });
+    }
+  },
+
+  verifyCode: async ({ email, code }) => {
+    set({ isVerifying: true });
+    try {
+      const res = await axiosInstance.post("/verify-code", { email, code });
+      toast.success(res.data.message || "Email verified! You can now log in.");
+      set({ pendingVerificationEmail: null });
+      // Optionally, auto-login or redirect after verification
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Verification failed");
+    } finally {
+      set({ isVerifying: false });
     }
   },
 

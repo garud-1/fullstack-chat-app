@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { generateToken } from "../utils/utils.js";
 import express from "express";
 import cloudinary from "../utils/cloudinary.js";
+import { sendVerificationEmail } from "../utils/email.js";
 
 const app = express();
 app.use(express.json());
@@ -28,29 +29,30 @@ export const signup = async (req, res) => {
 
     // hash the password
     const hashedPassword = await bcrypt.hash(password, 12);
-    // here we can provide the length also it creates the password
+
+    // Generate 6-digit code and expiry (10 min)
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
 
     // making new user
     const newUser = new User({
       fullName,
       email,
       password: hashedPassword,
+      isVerified: false,
+      verificationCode,
+      verificationCodeExpires,
     });
 
-    // check the user is saved or not
-    if (newUser) {
-      generateToken(newUser._id, res);
-      await newUser.save();
-      res.status(201).json({
-        _id: newUser._id,
-        fullName: newUser.fullName,
-        email: newUser.email,
-        profilePic: newUser.profilePic,
-      });
-    } else {
-      return res.status(400).json({ message: "Failed to create user" });
-      console.log("Failed to create user");
-    }
+    await newUser.save();
+
+    // Send verification code by email
+    await sendVerificationEmail(email, verificationCode);
+
+    res.status(201).json({
+      message: "User created. Please check your email for the verification code.",
+      email,
+    });
   } catch (error) {
     console.log("Error in signup : ", error);
     res.status(500).json({ message: "Internal server error" });
@@ -66,14 +68,16 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "user not exists" });
     }
 
+    // if (!user.isVerified) {
+    //   return res.status(401).json({ message: "Please verify your email before logging in." });
+    // }
+
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
     if (!isPasswordCorrect) {
       return res.status(400).json({ message: "invalid credentials" });
     }
 
     generateToken(user._id, res);
-    // we are using the generateToken function to generate the token
-    // and send it to the user
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,

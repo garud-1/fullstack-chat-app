@@ -1,0 +1,369 @@
+// Get notifications for the current user
+export const getNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('notifications.from', 'fullName email profilePic');
+    if (!user) return res.status(404).json({ message: "User not found." });
+    res.json({ notifications: user.notifications });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Mark all notifications as read
+export const markNotificationsRead = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+    user.notifications.forEach(n => n.read = true);
+    await user.save();
+    res.json({ message: "All notifications marked as read." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+// Create a new group
+export const createGroup = async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ message: "Group name is required." });
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+    if (user.friendGroups.some(g => g.name === name)) {
+      return res.status(400).json({ message: "Group with this name already exists." });
+    }
+    user.friendGroups.push({ name, members: [] });
+    await user.save();
+    res.json({ message: "Group created.", groups: user.friendGroups });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+import mongoose from "mongoose";
+
+// Get mutual friends
+export const getMutualFriends = async (req, res) => {
+  const { userId } = req.query;
+  try {
+    const user = await User.findById(req.user._id);
+    const other = await User.findById(userId);
+    if (!user || !other) return res.status(404).json({ message: "User not found." });
+    const mutual = user.friends.filter(f1 => other.friends.some(f2 => f2.user.toString() === f1.user.toString()));
+    res.json({ mutual });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Friend suggestions (simple: users with most mutual friends)
+export const getFriendSuggestions = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const all = await User.find({ _id: { $ne: req.user._id } });
+    const suggestions = all.map(u => {
+      const mutual = user.friends.filter(f1 => u.friends.some(f2 => f2.user.toString() === f1.user.toString()));
+      return { user: u, mutualCount: mutual.length };
+    }).sort((a, b) => b.mutualCount - a.mutualCount).slice(0, 10);
+    res.json({ suggestions });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Add friend to group
+export const addFriendToGroup = async (req, res) => {
+  const { groupName, friendId } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    let group = user.friendGroups.find(g => g.name === groupName);
+    if (!group) {
+      group = { name: groupName, members: [] };
+      user.friendGroups.push(group);
+    }
+    if (!group.members.includes(friendId)) group.members.push(friendId);
+    await user.save();
+    res.json({ message: "Friend added to group." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Remove friend from group
+export const removeFriendFromGroup = async (req, res) => {
+  const { groupName, friendId } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    let group = user.friendGroups.find(g => g.name === groupName);
+    if (group) {
+      group.members = group.members.filter(id => id.toString() !== friendId);
+      await user.save();
+    }
+    res.json({ message: "Friend removed from group." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Set nickname for a friend
+export const setFriendNickname = async (req, res) => {
+  const { friendId, nickname } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    const friend = user.friends.find(f => f.user.toString() === friendId);
+    if (friend) {
+      friend.nickname = nickname;
+      await user.save();
+      res.json({ message: "Nickname set." });
+    } else {
+      res.status(404).json({ message: "Friend not found." });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Add badge to a friend
+export const addFriendBadge = async (req, res) => {
+  const { friendId, badge } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    const friend = user.friends.find(f => f.user.toString() === friendId);
+    if (friend) {
+      if (!friend.badges.includes(badge)) friend.badges.push(badge);
+      await user.save();
+      res.json({ message: "Badge added." });
+    } else {
+      res.status(404).json({ message: "Friend not found." });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Set privacy settings
+export const setPrivacy = async (req, res) => {
+  const { canReceiveRequests, showOnlineStatus } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    if (typeof canReceiveRequests === "boolean") user.privacy.canReceiveRequests = canReceiveRequests;
+    if (typeof showOnlineStatus === "boolean") user.privacy.showOnlineStatus = showOnlineStatus;
+    await user.save();
+    res.json({ message: "Privacy updated." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Block with reason
+export const blockUserWithReason = async (req, res) => {
+  const { blockUserId, reason } = req.body;
+  const userId = req.user._id;
+  if (userId === blockUserId) return res.status(400).json({ message: "Cannot block yourself." });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+    if (!user.blockedUsers.some(b => b.user.toString() === blockUserId)) {
+      user.blockedUsers.push({ user: blockUserId, reason });
+      user.friends = user.friends.filter(f => f.user.toString() !== blockUserId);
+      user.friendRequests = user.friendRequests.filter(r => r.user.toString() !== blockUserId);
+      await user.save();
+    }
+    res.json({ message: "User blocked." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Bulk block/unblock/remove
+export const bulkAction = async (req, res) => {
+  const { action, userIds } = req.body;
+  try {
+    const user = await User.findById(req.user._id);
+    if (action === "block") {
+      userIds.forEach(id => {
+        if (!user.blockedUsers.some(b => b.user.toString() === id)) user.blockedUsers.push({ user: id });
+        user.friends = user.friends.filter(f => f.user.toString() !== id);
+        user.friendRequests = user.friendRequests.filter(r => r.user.toString() !== id);
+      });
+    } else if (action === "unblock") {
+      user.blockedUsers = user.blockedUsers.filter(b => !userIds.includes(b.user.toString()));
+    } else if (action === "removeFriend") {
+      user.friends = user.friends.filter(f => !userIds.includes(f.user.toString()));
+    }
+    await user.save();
+    res.json({ message: "Bulk action complete." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Set friend request note
+export const sendFriendRequestWithNote = async (req, res) => {
+  const { userId: targetUserId, note } = req.body;
+  const userId = req.user._id;
+  if (userId.toString() === targetUserId) return res.status(400).json({ message: "Cannot add yourself." });
+  try {
+    const targetUser = await User.findById(targetUserId);
+    const user = await User.findById(userId);
+    if (!targetUser) return res.status(404).json({ message: "User does not exist." });
+    if (targetUser.friendRequests.some(r => r.user.toString() === userId.toString()) || targetUser.friends.some(f => f.user.toString() === userId.toString())) {
+      return res.status(400).json({ message: "Already requested or friends." });
+    }
+    if (targetUser.blockedUsers.some(b => b.user.toString() === userId.toString()) || user.blockedUsers.some(b => b.user.toString() === targetUserId)) {
+      return res.status(400).json({ message: "You cannot send a request to this user." });
+    }
+    targetUser.friendRequests.push({ user: userId, note });
+    await targetUser.save();
+    res.json({ message: "Friend request sent." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+// Get current user's friends
+export const getFriends = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('friends.user', 'fullName email profilePic')
+      .populate('friendGroups.members', 'fullName email profilePic');
+    if (!user) return res.status(404).json({ message: "User not found." });
+    // Flatten friends array for frontend compatibility
+    const friends = user.friends.map(f => ({ ...f.user?._doc, ...f._doc }));
+    res.json({ friends, groups: user.friendGroups });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Get current user's friend requests
+export const getFriendRequests = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('friendRequests', 'fullName email profilePic');
+    if (!user) return res.status(404).json({ message: "User not found." });
+    res.json({ friendRequests: user.friendRequests });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Get current user's blocked users
+export const getBlockedUsers = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('blockedUsers', 'fullName email profilePic');
+    if (!user) return res.status(404).json({ message: "User not found." });
+    res.json({ blockedUsers: user.blockedUsers });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+import User from "../models/user.model.js";
+
+// Send a friend request
+export const sendFriendRequest = async (req, res) => {
+  const { userId: targetUserId } = req.body;
+  const userId = req.user._id;
+  if (userId.toString() === targetUserId) return res.status(400).json({ message: "Cannot add yourself." });
+  try {
+    const targetUser = await User.findById(targetUserId);
+    const user = await User.findById(userId);
+    if (!targetUser) return res.status(404).json({ message: "User does not exist." });
+    if (targetUser.friendRequests.includes(userId) || targetUser.friends.includes(userId)) {
+      return res.status(400).json({ message: "Already requested or friends." });
+    }
+    if (targetUser.blockedUsers.includes(userId) || user.blockedUsers.includes(targetUserId)) {
+      return res.status(400).json({ message: "You cannot send a request to this user." });
+    }
+    targetUser.friendRequests.push(userId);
+    await targetUser.save();
+    res.json({ message: "Friend request sent." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Cancel a sent friend request
+export const cancelFriendRequest = async (req, res) => {
+  const { userId: targetUserId } = req.body;
+  const userId = req.user._id;
+  try {
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) return res.status(404).json({ message: "User does not exist." });
+    targetUser.friendRequests = targetUser.friendRequests.filter(id => id.toString() !== userId.toString());
+    await targetUser.save();
+    res.json({ message: "Friend request cancelled." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Remove a friend
+export const removeFriend = async (req, res) => {
+  const { userId: targetUserId } = req.body;
+  const userId = req.user._id;
+  try {
+    const user = await User.findById(userId);
+    const targetUser = await User.findById(targetUserId);
+    if (!user || !targetUser) return res.status(404).json({ message: "User does not exist." });
+    user.friends = user.friends.filter(id => id.toString() !== targetUserId);
+    targetUser.friends = targetUser.friends.filter(id => id.toString() !== userId.toString());
+    await user.save();
+    await targetUser.save();
+    res.json({ message: "Friend removed." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Accept a friend request
+export const acceptFriendRequest = async (req, res) => {
+  const { requesterId } = req.body;
+  const userId = req.user._id;
+  try {
+    const user = await User.findById(userId);
+    const requester = await User.findById(requesterId);
+    if (!user || !requester) return res.status(404).json({ message: "User not found." });
+    if (!user.friendRequests.includes(requesterId)) return res.status(400).json({ message: "No such request." });
+    user.friends.push(requesterId);
+    requester.friends.push(userId);
+    user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
+    await user.save();
+    await requester.save();
+    res.json({ message: "Friend request accepted." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Block a user
+export const blockUser = async (req, res) => {
+  const { blockUserId } = req.body;
+  const userId = req.user._id;
+  if (userId === blockUserId) return res.status(400).json({ message: "Cannot block yourself." });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+    if (!user.blockedUsers.includes(blockUserId)) {
+      user.blockedUsers.push(blockUserId);
+      // Remove from friends and friendRequests if present
+      user.friends = user.friends.filter(id => id.toString() !== blockUserId);
+      user.friendRequests = user.friendRequests.filter(id => id.toString() !== blockUserId);
+      await user.save();
+    }
+    res.json({ message: "User blocked." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
+
+// Unblock a user
+export const unblockUser = async (req, res) => {
+  const { unblockUserId } = req.body;
+  const userId = req.user._id;
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+    user.blockedUsers = user.blockedUsers.filter(id => id.toString() !== unblockUserId);
+    await user.save();
+    res.json({ message: "User unblocked." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error." });
+  }
+};
