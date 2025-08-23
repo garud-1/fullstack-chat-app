@@ -29,11 +29,20 @@ const userSchema = new mongoose.Schema(
       since: { type: Date, default: Date.now },
       nickname: { type: String, default: "" },
       badges: [{ type: String }],
+      status: { type: String, enum: ['online', 'offline', 'away'], default: 'offline' }
     }],
     friendRequests: [{
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       note: { type: String, default: "" },
       date: { type: Date, default: Date.now },
+      status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' }
+    }],
+    notifications: [{
+      type: { type: String, enum: ['friendRequest', 'message', 'system'] },
+      from: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      text: String,
+      read: { type: Boolean, default: false },
+      createdAt: { type: Date, default: Date.now }
     }],
     blockedUsers: [{
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -43,10 +52,12 @@ const userSchema = new mongoose.Schema(
     friendGroups: [{
       name: { type: String, required: true },
       members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      createdAt: { type: Date, default: Date.now }
     }],
     privacy: {
       canReceiveRequests: { type: Boolean, default: true },
       showOnlineStatus: { type: Boolean, default: true },
+      lastSeen: { type: Boolean, default: true }
     },
     notifications: [
       {

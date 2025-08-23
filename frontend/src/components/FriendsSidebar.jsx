@@ -62,6 +62,7 @@ const FriendsSidebar = () => {
   const [sentRequests, setSentRequests] = useState([]);
   const [blocked, setBlocked] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [privacy, setPrivacy] = useState({ canReceiveRequests: true, showOnlineStatus: true });
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [blockReason, setBlockReason] = useState("");
@@ -71,21 +72,22 @@ const FriendsSidebar = () => {
   // Fetch all users and friend data
   const fetchAll = async () => {
     setLoading(true);
+    setError("");
     try {
-      const [usersRes, friendsRes, requestsRes, blockedRes] = await Promise.all([
+      const [usersRes, friendsRes, requestsRes, blockedRes, groupsRes] = await Promise.all([
         axiosInstance.get("/messages/users"),
         axiosInstance.get("/friends"),
         axiosInstance.get("/friends/requests"),
         axiosInstance.get("/blocked"),
+        axiosInstance.get("/friends/groups"),
       ]);
-  setUsers(usersRes.data.filter(u => u._id !== authUser?._id));
-  setFriends(friendsRes.data.friends);
-  setGroups(friendsRes.data.groups || []);
-  // Fetch privacy settings (simulate, or add endpoint if needed)
-  setPrivacy(authUser?.privacy || { canReceiveRequests: true, showOnlineStatus: true });
-      setRequests(requestsRes.data.friendRequests);
-      setBlocked(blockedRes.data.blockedUsers);
-      // Find sent requests (users you sent requests to but not yet friends)
+      
+      setUsers(usersRes.data.filter(u => u._id !== authUser?._id));
+      setFriends(friendsRes.data || []);
+      setGroups(groupsRes.data || []);
+      setPrivacy(authUser?.privacy || { canReceiveRequests: true, showOnlineStatus: true });
+      setRequests(requestsRes.data || []);
+      setBlocked(blockedRes.data || []);
       const sent = usersRes.data.filter(u =>
         u._id !== authUser?._id &&
         !friendsRes.data.friends.some(f => f._id === u._id) &&
@@ -95,6 +97,7 @@ const FriendsSidebar = () => {
       );
       setSentRequests(sent);
     } catch (e) {
+      setError(e?.response?.data?.message || e?.message || "Failed to load friends data");
       toast.error("Failed to load friends data");
     } finally {
       setLoading(false);
@@ -288,6 +291,8 @@ const FriendsSidebar = () => {
       <h2 className="font-bold text-lg mb-2">All Users</h2>
       {loading ? (
         <div className="text-center text-gray-400">Loading...</div>
+      ) : error ? (
+        <div className="text-center text-red-500">Error: {error}</div>
       ) : (
         filteredUsers.length === 0 ? <p className="text-gray-400">No users found.</p> :
         filteredUsers.map((user) => {

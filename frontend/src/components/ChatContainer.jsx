@@ -20,9 +20,10 @@ function ChatContainer() {
   }, [selectedUser._id, getMessages , subscribeToMessages ,unsubscribeFromMessages ]);
   
   useEffect(() => {
-    if(messageEndRef.current && messages) 
-    messageEndRef.current.scrollIntoView({ behavior: "smooth" });
-  },[messages])
+    if (messageEndRef.current) {
+      messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
   
   if (isMessagesLoading) {
     return (
@@ -34,77 +35,63 @@ function ChatContainer() {
     );
   }
   return (
-    <>
-      <div
-        className="flex flex-1 flex-col overflow-auto relative"
-        style={{
-          backgroundImage:
-            theme === "dark"
-              ? "url('https://i.pinimg.com/736x/d4/0d/20/d40d20985b3163d030d35a5e1901062d.jpg')"
-              : "url('https://i.pinimg.com/736x/8c/98/99/8c98994518b575bfd8c949e91d20548b.jpg')",
-          backgroundSize: 'fit',
-          backgroundRepeat: 'repeat',
-          backgroundPosition: 'center',
-        }}
-      >
-        {/* Overlay for opacity */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: theme === "dark" ? '#222d31' : '#ffffff',
-            opacity: theme === "dark" ? 0.85 : 0.7,
-            pointerEvents: 'none',
-            zIndex: 0,
-            transition: 'background 0.3s, opacity 0.3s',
-          }}
-        />
-        <div className="relative z-10 flex-1 flex flex-col">
-          <ChatHeader />
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message._id}
-              className={`chat ${
-                message.senderId === authUser._id ? "chat-end" : "chat-start"
-              }`}
-              ref={messageEndRef}
-            >
-              <div className="chat-image avatar">
-                <div className="size-10 rounded-full border">
+    <div className="flex flex-1 flex-col overflow-hidden relative bg-base-200">
+      <div className="relative z-10 flex-1 flex flex-col">
+        <ChatHeader />
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-transparent">
+          {messages.length === 0 && (
+            <div className="text-center text-neutral-500 mt-8">No messages yet — say hello 👋</div>
+          )}
+          {messages.map((message) => {
+            const isOwn = message.senderId === authUser._id;
+            return (
+              <div
+                key={message._id}
+                className={`flex items-end gap-3 ${isOwn ? 'justify-end' : 'justify-start'}`}
+              >
+                {!isOwn && (
                   <img
-                    src={
-                      message.senderId === authUser._id
-                        ? authUser.profilePic || "/avatar.png"
-                        : selectedUser.profilePic || "/avatar.png"
-                    }
-                    alt="profile pic"
-                  />
-                </div>
-              </div>
-              {/* // here we will render the time of the message  */}
-              <div className="chat-header mb-1">
-                <time className="text-xs-opacity-50 ml-1">
-                  {formatMessageTime(message.createdAt)}
-                </time>
-              </div>
-              <div className="chat-bubble flex flex-col">
-                {message.image && (
-                  <img
-                    src={message.image}
-                    alt="attachment"
-                    className="sm:max-w-[200px] rounded-md mb-2"
+                    src={selectedUser.profilePic || '/avatar.png'}
+                    alt="avatar"
+                    className="w-10 h-10 rounded-full object-cover border"
                   />
                 )}
-                {message.text && <p>{message.text}</p>}
+
+                <div className="max-w-[75%]">
+                  <div
+                    className={`inline-block px-4 py-2 rounded-xl break-words shadow-sm ${
+                      isOwn ? 'bg-primary text-primary-content rounded-br-none' : 'bg-base-100 text-base-content rounded-bl-none'
+                    }`}
+                  >
+                    {message.image && (
+                      <img src={message.image} alt="attachment" className="max-w-full rounded-md mb-2" />
+                    )}
+                    {message.text && <div className="whitespace-pre-wrap">{message.text}</div>}
+                  </div>
+                  <div className={`text-[11px] mt-1 ${isOwn ? 'text-right text-neutral-400' : 'text-left text-neutral-400'}`}>
+                    {formatMessageTime(message.createdAt)}
+                  </div>
+                </div>
+
+                {isOwn && (
+                  <img
+                    src={authUser.profilePic || '/avatar.png'}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full object-cover border"
+                  />
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
+
+          <div ref={messageEndRef} />
         </div>
-        <MessageInput />
+
+        <div className="border-t mt-auto">
+          <MessageInput />
+        </div>
       </div>
     </div>
-    </>
   );
 }
 

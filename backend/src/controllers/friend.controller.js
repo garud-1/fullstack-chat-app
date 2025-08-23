@@ -1,3 +1,5 @@
+import User from '../models/user.model.js';
+
 // Get notifications for the current user
 export const getNotifications = async (req, res) => {
   try {
@@ -39,8 +41,7 @@ export const createGroup = async (req, res) => {
   }
 };
 import mongoose from "mongoose";
-
-// Get mutual friends
+ 
 export const getMutualFriends = async (req, res) => {
   const { userId } = req.query;
   try {
@@ -54,21 +55,7 @@ export const getMutualFriends = async (req, res) => {
   }
 };
 
-// Friend suggestions (simple: users with most mutual friends)
-export const getFriendSuggestions = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    const all = await User.find({ _id: { $ne: req.user._id } });
-    const suggestions = all.map(u => {
-      const mutual = user.friends.filter(f1 => u.friends.some(f2 => f2.user.toString() === f1.user.toString()));
-      return { user: u, mutualCount: mutual.length };
-    }).sort((a, b) => b.mutualCount - a.mutualCount).slice(0, 10);
-    res.json({ suggestions });
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
+ 
 // Add friend to group
 export const addFriendToGroup = async (req, res) => {
   const { groupName, friendId } = req.body;
@@ -102,43 +89,8 @@ export const removeFriendFromGroup = async (req, res) => {
     res.status(500).json({ message: "Server error." });
   }
 };
-
-// Set nickname for a friend
-export const setFriendNickname = async (req, res) => {
-  const { friendId, nickname } = req.body;
-  try {
-    const user = await User.findById(req.user._id);
-    const friend = user.friends.find(f => f.user.toString() === friendId);
-    if (friend) {
-      friend.nickname = nickname;
-      await user.save();
-      res.json({ message: "Nickname set." });
-    } else {
-      res.status(404).json({ message: "Friend not found." });
-    }
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
-// Add badge to a friend
-export const addFriendBadge = async (req, res) => {
-  const { friendId, badge } = req.body;
-  try {
-    const user = await User.findById(req.user._id);
-    const friend = user.friends.find(f => f.user.toString() === friendId);
-    if (friend) {
-      if (!friend.badges.includes(badge)) friend.badges.push(badge);
-      await user.save();
-      res.json({ message: "Badge added." });
-    } else {
-      res.status(404).json({ message: "Friend not found." });
-    }
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
+ 
+ 
 // Set privacy settings
 export const setPrivacy = async (req, res) => {
   const { canReceiveRequests, showOnlineStatus } = req.body;
@@ -153,48 +105,8 @@ export const setPrivacy = async (req, res) => {
   }
 };
 
-// Block with reason
-export const blockUserWithReason = async (req, res) => {
-  const { blockUserId, reason } = req.body;
-  const userId = req.user._id;
-  if (userId === blockUserId) return res.status(400).json({ message: "Cannot block yourself." });
-  try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found." });
-    if (!user.blockedUsers.some(b => b.user.toString() === blockUserId)) {
-      user.blockedUsers.push({ user: blockUserId, reason });
-      user.friends = user.friends.filter(f => f.user.toString() !== blockUserId);
-      user.friendRequests = user.friendRequests.filter(r => r.user.toString() !== blockUserId);
-      await user.save();
-    }
-    res.json({ message: "User blocked." });
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
-// Bulk block/unblock/remove
-export const bulkAction = async (req, res) => {
-  const { action, userIds } = req.body;
-  try {
-    const user = await User.findById(req.user._id);
-    if (action === "block") {
-      userIds.forEach(id => {
-        if (!user.blockedUsers.some(b => b.user.toString() === id)) user.blockedUsers.push({ user: id });
-        user.friends = user.friends.filter(f => f.user.toString() !== id);
-        user.friendRequests = user.friendRequests.filter(r => r.user.toString() !== id);
-      });
-    } else if (action === "unblock") {
-      user.blockedUsers = user.blockedUsers.filter(b => !userIds.includes(b.user.toString()));
-    } else if (action === "removeFriend") {
-      user.friends = user.friends.filter(f => !userIds.includes(f.user.toString()));
-    }
-    await user.save();
-    res.json({ message: "Bulk action complete." });
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
+ 
+ 
 
 // Set friend request note
 export const sendFriendRequestWithNote = async (req, res) => {
@@ -218,21 +130,7 @@ export const sendFriendRequestWithNote = async (req, res) => {
     res.status(500).json({ message: "Server error." });
   }
 };
-// Get current user's friends
-export const getFriends = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id)
-      .populate('friends.user', 'fullName email profilePic')
-      .populate('friendGroups.members', 'fullName email profilePic');
-    if (!user) return res.status(404).json({ message: "User not found." });
-    // Flatten friends array for frontend compatibility
-    const friends = user.friends.map(f => ({ ...f.user?._doc, ...f._doc }));
-    res.json({ friends, groups: user.friendGroups });
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
+ 
 // Get current user's friend requests
 export const getFriendRequests = async (req, res) => {
   try {
@@ -243,18 +141,7 @@ export const getFriendRequests = async (req, res) => {
     res.status(500).json({ message: "Server error." });
   }
 };
-
-// Get current user's blocked users
-export const getBlockedUsers = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).populate('blockedUsers', 'fullName email profilePic');
-    if (!user) return res.status(404).json({ message: "User not found." });
-    res.json({ blockedUsers: user.blockedUsers });
-  } catch (err) {
-    res.status(500).json({ message: "Server error." });
-  }
-};
-import User from "../models/user.model.js";
+ 
 
 // Send a friend request
 export const sendFriendRequest = async (req, res) => {

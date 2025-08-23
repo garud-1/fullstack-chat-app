@@ -1,20 +1,45 @@
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { LogOut, MessageSquare, Settings, User, Bell, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { axiosInstance } from "../utils/axios";
 
 const Navbar = () => {
   const { logout, authUser } = useAuthStore();
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const dropdownRef = useRef(null);
   useEffect(() => {
     if (!authUser) return;
-    axiosInstance.get("/friends/notifications").then(res => {
-      setNotifications(res.data.notifications || []);
-    });
+    const fetchNotifs = async () => {
+      try {
+        const res = await axiosInstance.get("/friends/notifications");
+        setNotifications(res.data.notifications || []);
+      } catch (err) {
+        // ignore silently
+      }
+    };
+    fetchNotifs();
   }, [authUser]);
+
+  // close dropdown on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setNotifOpen(false);
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAllRead = async () => {
+    try {
+      await axiosInstance.post("/friends/notifications/read");
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      // ignore
+    }
+  };
 
   return (
     <header
@@ -34,39 +59,45 @@ const Navbar = () => {
 
           <div className="flex items-center gap-2">
             {/* Notification Bell */}
-            <div className="relative">
-              <button className="btn btn-ghost btn-circle" tabIndex={0} onClick={() => setNotifOpen(v => !v)}>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setNotifOpen(v => !v)}
+                className="btn btn-ghost btn-sm relative flex items-center gap-2"
+                aria-label="Notifications"
+              >
                 <Bell className="w-5 h-5" />
-                {unreadCount > 0 && <span className="badge badge-error badge-xs absolute -top-1 -right-1">{unreadCount}</span>}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
+                )}
               </button>
+
               {notifOpen && (
-                <div className="absolute right-0 mt-3 w-80 bg-base-100 border border-base-300 rounded-2xl shadow-2xl z-50 overflow-hidden">
-                  <div className="px-5 py-3 font-bold text-base border-b bg-base-200 flex items-center gap-2 rounded-t-2xl">
-                    <Bell className="w-5 h-5 text-primary" /> Notifications
+                <div className="absolute right-0 mt-2 w-80 bg-white shadow-lg rounded-md overflow-hidden z-50">
+                  <div className="p-3 border-b flex items-center justify-between">
+                    <div className="font-semibold">Notifications</div>
+                    <button onClick={markAllRead} className="text-sm text-indigo-600 hover:underline">Mark all read</button>
                   </div>
-                  <ul className="max-h-72 overflow-y-auto divide-y divide-base-300">
-                    {notifications.length === 0 && (
-                      <li className="px-5 py-6 text-center text-base-content/60">No notifications</li>
-                    )}
-                    {notifications.map((n, i) => (
-                      <li key={i} className={`flex items-start gap-3 px-5 py-4 hover:bg-base-200 transition cursor-pointer ${!n.read ? 'bg-primary/5' : ''}`}>
-                        <span className={`rounded-full p-2 flex items-center justify-center ${n.type === 'group_invite' ? 'bg-primary/10 text-primary' : n.type === 'friend_request' ? 'bg-success/10 text-success' : 'bg-base-300/40 text-base-content/70'}`}>
-                          {n.type === 'group_invite' ? <Users className="w-5 h-5" /> : <User className="w-5 h-5" />}
-                        </span>
-                        <div className="flex-1">
-                          <div className="font-semibold capitalize">{n.type.replace('_', ' ')}</div>
-                          <div className="text-sm text-base-content/70">{n.message}</div>
-                          {/* Optionally, add Accept/Decline for invites/requests */}
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifications.length === 0 && <div className="p-4 text-sm text-gray-500">No notifications</div>}
+                    {notifications.map((n) => (
+                      <div key={n._id} className={`p-3 border-b hover:bg-gray-50 ${n.read ? 'bg-white' : 'bg-indigo-50'}`}>
+                        <div className="flex items-start gap-3">
+                          <img src={n.from?.profilePic || '/avatar.png'} alt={n.from?.fullName} className="w-8 h-8 rounded-full object-cover" />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{n.from?.fullName || 'System'}</div>
+                            <div className="text-xs text-gray-600">{n.text}</div>
+                            <div className="text-[10px] text-gray-400 mt-1">{new Date(n.createdAt).toLocaleString()}</div>
+                          </div>
                         </div>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
-                  <div className="p-3 text-center text-sm text-primary cursor-pointer hover:underline bg-base-200 rounded-b-2xl">View all notifications</div>
+                  </div>
                 </div>
               )}
             </div>
+
             <Link
-              to={"/settings"}
+              to={'/settings'}
               className={`
               btn btn-sm gap-2 transition-colors
               
