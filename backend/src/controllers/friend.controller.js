@@ -124,6 +124,14 @@ export const sendFriendRequestWithNote = async (req, res) => {
       return res.status(400).json({ message: "You cannot send a request to this user." });
     }
     targetUser.friendRequests.push({ user: userId, note });
+    // push a notification for the target user
+    targetUser.notifications.push({
+      type: 'friend_request',
+      message: `${user.fullName} sent you a friend request`,
+      from: userId,
+      read: false,
+      createdAt: Date.now()
+    });
     await targetUser.save();
     res.json({ message: "Friend request sent." });
   } catch (err) {
@@ -152,13 +160,26 @@ export const sendFriendRequest = async (req, res) => {
     const targetUser = await User.findById(targetUserId);
     const user = await User.findById(userId);
     if (!targetUser) return res.status(404).json({ message: "User does not exist." });
-    if (targetUser.friendRequests.includes(userId) || targetUser.friends.includes(userId)) {
+    // normalize checks: friendRequests may be stored as objects { user: id }
+    const alreadyRequested = targetUser.friendRequests.some(r => (r.user ? r.user.toString() === userId.toString() : r.toString() === userId.toString()));
+    const alreadyFriend = targetUser.friends.some(f => (f.user ? f.user.toString() === userId.toString() : f.toString() === userId.toString()));
+    if (alreadyRequested || alreadyFriend) {
       return res.status(400).json({ message: "Already requested or friends." });
     }
     if (targetUser.blockedUsers.includes(userId) || user.blockedUsers.includes(targetUserId)) {
       return res.status(400).json({ message: "You cannot send a request to this user." });
     }
-    targetUser.friendRequests.push(userId);
+    // store as object with user field for consistency
+    targetUser.friendRequests.push({ user: userId, date: Date.now(), status: 'pending' });
+    // push a notification for the target user
+    const sender = await User.findById(userId);
+    targetUser.notifications.push({
+      type: 'friend_request',
+      message: `${sender?.fullName || 'Someone'} sent you a friend request`,
+      from: userId,
+      read: false,
+      createdAt: Date.now()
+    });
     await targetUser.save();
     res.json({ message: "Friend request sent." });
   } catch (err) {
@@ -207,12 +228,40 @@ export const acceptFriendRequest = async (req, res) => {
     const user = await User.findById(userId);
     const requester = await User.findById(requesterId);
     if (!user || !requester) return res.status(404).json({ message: "User not found." });
-    if (!user.friendRequests.includes(requesterId)) return res.status(400).json({ message: "No such request." });
-    user.friends.push(requesterId);
-    requester.friends.push(userId);
-    user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
+    // Find the request element whether stored as object { user } or as direct id
+    const requestIndex = user.friendRequests.findIndex(r => {
+      if (!r) return false;
+      if (typeof r === 'string' || r instanceof String) return r.toString() === requesterId.toString();
+      if (r.user) return r.user.toString() === requesterId.toString();
+      return false;
+    });
+
+    // Add to friends arrays as objects for consistency
+    user.friends = user.friends || [];
+    requester.friends = requester.friends || [];
+    // avoid duplicates
+    const alreadyFriendUser = user.friends.some(f => (f.user ? f.user.toString() === requesterId.toString() : f.toString() === requesterId.toString()));
+    const alreadyFriendRequester = requester.friends.some(f => (f.user ? f.user.toString() === userId.toString() : f.toString() === userId.toString()));
+    if (!alreadyFriendUser) user.friends.push({ user: requesterId, since: Date.now() });
+    if (!alreadyFriendRequester) requester.friends.push({ user: userId, since: Date.now() });
+
+    // If a friend request entry exists, remove it
+    if (requestIndex !== -1) {
+      user.friendRequests.splice(requestIndex, 1);
+    }
+
+    // save both users
     await user.save();
+    // notify the requester that request was accepted
+    requester.notifications.push({
+      type: 'info',
+      message: `${user.fullName} accepted your friend request`,
+      from: userId,
+      read: false,
+      createdAt: Date.now()
+    });
     await requester.save();
+
     res.json({ message: "Friend request accepted." });
   } catch (err) {
     res.status(500).json({ message: "Server error." });

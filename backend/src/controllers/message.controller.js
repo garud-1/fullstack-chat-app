@@ -62,6 +62,29 @@ export const sendMessage = async (req, res) => {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
 
+    // create a notification for the receiver
+    try {
+      const receiver = await User.findById(receiverId);
+      const sender = await User.findById(senderId).select('fullName profilePic');
+      if (receiver) {
+        receiver.notifications = receiver.notifications || [];
+        receiver.notifications.push({
+          type: 'message',
+          message: `${sender?.fullName || 'Someone'} sent you a message`,
+          from: senderId,
+          read: false,
+          createdAt: Date.now()
+        });
+        await receiver.save();
+      }
+      // emit a socket-level notification event
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('notification', { type: 'message', from: senderId, message: `${sender?.fullName || 'Someone'} sent you a message` });
+      }
+    } catch (err) {
+      console.error('Failed to create message notification', err.message);
+    }
+
     res.status(201).json(newMessage);
   } catch (error) {
     console.log("Error in sendMessage controller: ", error.message);
