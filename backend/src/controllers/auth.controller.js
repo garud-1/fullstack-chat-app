@@ -46,11 +46,16 @@ export const signup = async (req, res) => {
 
     await newUser.save();
 
-    // Send verification code by email
-    await sendVerificationEmail(email, verificationCode);
+    // Send verification code by email. If email fails, don't block signup — log error for debugging
+    try {
+      await sendVerificationEmail(email, verificationCode);
+    } catch (emailErr) {
+      console.error('sendVerificationEmail failed:', emailErr && emailErr.message ? emailErr.message : emailErr);
+      // optionally record this in a monitoring system
+    }
 
     res.status(201).json({
-      message: "User created. Please check your email for the verification code.",
+      message: "User created. Please check your email for the verification code (email may be delayed).",
       email,
     });
   } catch (error) {
@@ -68,9 +73,9 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "user not exists" });
     }
 
-    // if (!user.isVerified) {
-    //   return res.status(401).json({ message: "Please verify your email before logging in." });
-    // }
+    if (!user.isVerified) {
+      return res.status(401).json({ message: "Please verify your email before logging in." });
+    }
 
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
     if (!isPasswordCorrect) {

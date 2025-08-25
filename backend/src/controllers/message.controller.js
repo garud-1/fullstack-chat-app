@@ -41,6 +41,35 @@ export const sendMessage = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
+    // verify sender and receiver and friendship/block status before doing any heavy work
+    const sender = await User.findById(senderId);
+    const receiver = await User.findById(receiverId);
+
+    if (!sender) {
+      return res.status(404).json({ error: 'Sender not found' });
+    }
+
+    if (!receiver) {
+      return res.status(404).json({ error: 'Receiver not found' });
+    }
+
+    // Check if receiver is in sender's friends list
+    const isFriend = Array.isArray(sender.friends) && sender.friends.some(f => String(f.user) === String(receiverId));
+    if (!isFriend) {
+      return res.status(403).json({ error: 'You can only send messages to friends.' });
+    }
+
+    // Check block lists
+    const receiverBlockedSender = Array.isArray(receiver.blockedUsers) && receiver.blockedUsers.some(b => String(b.user) === String(senderId));
+    if (receiverBlockedSender) {
+      return res.status(403).json({ error: 'You are blocked by this user.' });
+    }
+
+    const senderBlockedReceiver = Array.isArray(sender.blockedUsers) && sender.blockedUsers.some(b => String(b.user) === String(receiverId));
+    if (senderBlockedReceiver) {
+      return res.status(403).json({ error: 'You have blocked this user.' });
+    }
+
     let imageUrl;
     if (image) {
       // Upload base64 image to cloudinary
